@@ -1,0 +1,26 @@
+{
+  "name": "pos-app",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "electron",
+    "renderer",
+    "server"
+  ],
+  "scripts": {
+    "bootstrap": "npm install",
+    "dev:renderer": "npm --workspace pos-renderer run dev",
+    "dev:server": "npm --workspace pos-server run dev",
+    "dev:electron": "npm --workspace pos-electron run dev",
+    "dev": "concurrently \"npm --workspace pos-renderer run dev\" \"npm --workspace pos-server run dev\" \"npm --workspace pos-electron run dev\"",
+    "build": "npm --workspaces run build",
+    "lint": "npm --workspaces run lint",
+    "test": "npm --workspaces run test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  }
+}

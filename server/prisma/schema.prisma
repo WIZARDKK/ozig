@@ -1,0 +1,273 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// User management with role-based access
+model User {
+  id          Int      @id @default(autoincrement())
+  email       String   @unique
+  name        String
+  password    String   // Should be hashed
+  role        Role     @relation(fields: [roleId], references: [id])
+  roleId      Int
+  isActive    Boolean  @default(true)
+  orders      Order[]
+  exchanges   Exchange[]
+  returns     Return[]
+  barcodes    Barcode[]
+  auditLogs   AuditLog[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Role {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique // 'CASHIER', 'MANAGER'
+  permissions String   @db.Text // JSON array of permissions
+  users       User[]
+}
+
+// Product catalog for costume shop
+model Product {
+  id               Int         @id @default(autoincrement())
+  sku              String      @unique
+  name             String
+  description      String?
+  category         Category    @relation(fields: [categoryId], references: [id])
+  categoryId       Int
+  brand            String?
+  size             String?     // XS, S, M, L, XL, XXL
+  color            String?
+  gender           String?     // Male, Female, Unisex
+  price            Decimal     @db.Decimal(10,2)
+  costPrice        Decimal     @db.Decimal(10,2)
+  isActive         Boolean     @default(true)
+  inventory        Inventory?
+  barcodes         Barcode[]
+  orderItems       OrderItem[]
+  newExchanges     ExchangeItem[] @relation("NewProduct")
+  returnItems      ReturnItem[]
+  stock            Int            @default(0) // Add stock field for inventory tracking
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+model Category {
+  id       Int       @id @default(autoincrement())
+  name     String    @unique // Wedding, Party, Traditional, Casual, etc.
+  products Product[]
+}
+
+// Barcode management
+model Barcode {
+  id              Int     @id @default(autoincrement())
+  code            String  @unique // The actual barcode value
+  product         Product @relation(fields: [productId], references: [id])
+  productId       Int
+  format          String  @default("CODE128") // CODE128, CODE39, EAN13, etc.
+  isActive        Boolean @default(true)
+  printCount      Int     @default(0)
+  lastPrintedAt   DateTime?
+  createdBy       User    @relation(fields: [createdById], references: [id])
+  createdById     Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// Inventory management
+model Inventory {
+  id              Int     @id @default(autoincrement())
+  product         Product @relation(fields: [productId], references: [id])
+  productId       Int     @unique
+  quantity        Int     @default(0)
+  minStockLevel   Int     @default(5)
+  maxStockLevel   Int     @default(100)
+  reorderPoint    Int     @default(10)
+  updatedAt       DateTime @updatedAt
+}
+
+// Sales transactions
+model Order {
+  id            Int         @id @default(autoincrement())
+  orderNumber   String      @unique // POS-YYYYMMDD-0001
+  user          User        @relation(fields: [userId], references: [id])
+  userId        Int
+  customerName  String?
+  customerPhone String?
+  subtotal      Decimal     @db.Decimal(10,2)
+  discountAmount Decimal    @db.Decimal(10,2) @default(0)
+  taxAmount     Decimal     @db.Decimal(10,2) @default(0)
+  total         Decimal     @db.Decimal(10,2)
+  status        OrderStatus @default(COMPLETED)
+  paymentMethod PaymentMethod
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  items         OrderItem[]
+  payments      Payment[]
+  exchanges     Exchange[]
+  returns       Return[]
+}
+
+enum OrderStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  MOBILE_PAYMENT // For Sri Lankan mobile payments
+  BANK_TRANSFER
+}
+
+model OrderItem {
+  id          Int            @id @default(autoincrement())
+  order       Order          @relation(fields: [orderId], references: [id])
+  orderId     Int
+  product     Product        @relation(fields: [productId], references: [id])
+  productId   Int
+  quantity    Int
+  unitPrice   Decimal        @db.Decimal(10,2)
+  discount    Decimal        @db.Decimal(10,2) @default(0)
+  totalPrice  Decimal        @db.Decimal(10,2) // (unitPrice * quantity) - discount
+  exchangeItems ExchangeItem[]
+}
+
+// Exchange handling
+model Exchange {
+  id                      Int           @id @default(autoincrement())
+  exchangeNumber          String        @unique
+  originalOrder           Order         @relation(fields: [originalOrderId], references: [id])
+  originalOrderId         Int
+  user                    User?         @relation(fields: [userId], references: [id])
+  userId                  Int?
+  customerName            String?
+  customerPhone           String?
+  status                  ExchangeStatus @default(COMPLETED)
+  exchangeDate            DateTime      @default(now())
+  totalPriceDifference    Decimal       @db.Decimal(10,2) @default(0)
+  additionalPaymentRequired Decimal     @db.Decimal(10,2) @default(0)
+  createdAt               DateTime      @default(now())
+  updatedAt               DateTime      @updatedAt
+  items                   ExchangeItem[]
+}
+
+enum ExchangeStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+model ExchangeItem {
+  id                  Int       @id @default(autoincrement())
+  exchange            Exchange  @relation(fields: [exchangeId], references: [id])
+  exchangeId          Int
+  originalOrderItem   OrderItem @relation(fields: [originalOrderItemId], references: [id])
+  originalOrderItemId Int
+  newProduct          Product   @relation(fields: [newProductId], references: [id], name: "NewProduct")
+  newProductId        Int
+  quantity            Int       @default(1)
+  priceDifference     Decimal   @db.Decimal(10,2) @default(0)
+  createdAt           DateTime  @default(now())
+}
+
+// Return/Damage handling  
+model Return {
+  id           Int          @id @default(autoincrement())
+  returnNumber String       @unique
+  order        Order        @relation(fields: [orderId], references: [id])
+  orderId      Int
+  user         User         @relation(fields: [userId], references: [id])
+  userId       Int
+  reason       ReturnReason
+  status       ReturnStatus @default(PENDING)
+  refundAmount Decimal      @db.Decimal(10,2)
+  createdAt    DateTime     @default(now())
+  items        ReturnItem[]
+}
+
+enum ReturnReason {
+  DEFECTIVE
+  DAMAGED
+  WRONG_SIZE
+  CUSTOMER_CHANGE_MIND
+  OTHER
+}
+
+enum ReturnStatus {
+  PENDING
+  APPROVED
+  REFUNDED
+  REJECTED
+}
+
+model ReturnItem {
+  id        Int     @id @default(autoincrement())
+  return    Return  @relation(fields: [returnId], references: [id])
+  returnId  Int
+  product   Product @relation(fields: [productId], references: [id])
+  productId Int
+  quantity  Int
+  condition String  // "Good", "Damaged", "Defective"
+}
+
+// Discount management
+model Discount {
+  id          Int          @id @default(autoincrement())
+  name        String
+  code        String?      @unique
+  type        DiscountType
+  value       Decimal      @db.Decimal(10,2) // Percentage or fixed amount
+  minAmount   Decimal?     @db.Decimal(10,2)
+  maxDiscount Decimal?     @db.Decimal(10,2)
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean      @default(true)
+  usageLimit  Int?
+  usageCount  Int          @default(0)
+  createdAt   DateTime     @default(now())
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  BUY_X_GET_Y
+}
+
+model Payment {
+  id            Int           @id @default(autoincrement())
+  order         Order         @relation(fields: [orderId], references: [id])
+  orderId       Int
+  amount        Decimal       @db.Decimal(10,2)
+  method        PaymentMethod
+  reference     String?       // Card/mobile payment reference
+  status        PaymentStatus @default(COMPLETED)
+  createdAt     DateTime      @default(now())
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    Int
+  action    String   // CREATE, UPDATE, DELETE
+  entity    String   // ORDER, PRODUCT, EXCHANGE, RETURN
+  entityId  Int
+  oldData   Json?
+  newData   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+}
